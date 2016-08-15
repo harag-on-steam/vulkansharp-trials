@@ -23,6 +23,8 @@ namespace Vulkan.Tutorial
         public Windowing(uint width, uint height)
         {
             InitWindow(width, height);
+            this.Width = width;
+            this.Height = height;
         }
 
         private void InitWindow(uint width, uint height)

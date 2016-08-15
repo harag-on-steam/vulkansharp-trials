@@ -35,6 +35,10 @@
     <WarningLevel>4</WarningLevel>
     <DocumentationFile>bin\Release\VulkanTutorial.XML</DocumentationFile>
   </PropertyGroup>
+  <Import Project="$(SolutionDir)\user.props" Condition="Exists('$(SolutionDir)\user.props')" />
+  <PropertyGroup>
+    <ShaderCompiler>$(VulkanSdkHome)\Bin\glslangValidator</ShaderCompiler>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -47,29 +51,46 @@
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
     <Reference Include="Vulkan">
-      <HintPath>..\..\Infinivox\Expanse\bin\Debug\Vulkan.dll</HintPath>
+      <HintPath>$(OutputPath)Vulkan.dll</HintPath>
     </Reference>
     <Reference Include="Vulkan.Windows">
-      <HintPath>..\..\Infinivox\Expanse\bin\Debug\Vulkan.Windows.dll</HintPath>
+      <HintPath>$(OutputPath)Vulkan.Windows.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="src\Vulkan\Tutorial\CollectionExtensions.cs" />
-    <Compile Include="src\Vulkan\Tutorial\Program.cs" />
-    <Compile Include="src\Vulkan\Tutorial\VulkanRenderer.cs" />
-    <Compile Include="src\Vulkan\Tutorial\Windowing.cs" />
+    <Compile Include="src\csharp\Vulkan\Tutorial\CollectionExtensions.cs" />
+    <Compile Include="src\csharp\Vulkan\Tutorial\Program.cs" />
+    <Compile Include="src\csharp\Vulkan\Tutorial\VulkanRenderer.cs" />
+    <Compile Include="src\csharp\Vulkan\Tutorial\Windowing.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="src\glsl\shader.vert" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="src\glsl\shader.frag" />
-  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <BuildDependsOn>
+    CompileVulkanShaders;
+	CopyVulkanSharpAssemblies;
+    $(BuildDependsOn)
+  </BuildDependsOn>
+  </PropertyGroup>
+  <Target Name="CopyVulkanSharpAssemblies" Condition="!Exists('$(OutputPath)\Vulkan.dll')">
+    <Error Text="You need to put the Vulkan.dll and Vulkan.Windows.dll assemblies into $(ProjectDir)$(OutputPath) yourself. You can get them by compiling VulkanSharp (https://github.com/mono/VulkanSharp')" />
+  </Target>
+  <ItemGroup>
+    <CompileShader Include="src\glsl\**\*.vert" />
+    <CompileShader Include="src\glsl\**\*.frag" />
+  </ItemGroup>
+  <Target Name="CompileVulkanShaders" Inputs="%(CompileShader.Identity)" Outputs="%(CompileShader.RecursiveDir)\%(CompileShader.Filename)%(CompileShader.Extension).spv">
+    <Error Text="Copy user.props.template into user.props and configure the path to the Vulkan SDK" Condition="!Exists('$(ShaderCompiler).exe')" />
+    <PropertyGroup>
+      <ShaderOutputDir>$(OutputPath)\Shaders\%(CompileShader.RecursiveDir)</ShaderOutputDir>
+      <ShaderOutputPath>$(ShaderOutputDir)\%(CompileShader.Filename)%(CompileShader.Extension).spv</ShaderOutputPath>
+    </PropertyGroup>
+    <MakeDir Directories="$(ShaderOutputDir)" />
+    <Exec Command="&quot;$(ShaderCompiler)&quot; -V -s -o &quot;$(ShaderOutputPath)&quot; &quot;%(CompileShader.Identity)&quot;" />
+  </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">

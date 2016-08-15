@@ -374,8 +374,8 @@ namespace Vulkan.Tutorial
 
         private void CreateGraphicsPipeline()
         {
-            vkVertShaderModule = vkDevice.CreateShaderModule(ReadFile("vert.spv"));
-            vkFragShaderModule = vkDevice.CreateShaderModule(ReadFile("frag.spv"));
+            vkVertShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\shader.vert.spv"));
+            vkFragShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\shader.frag.spv"));
 
             var shaderStages = new[] {
                 new PipelineShaderStageCreateInfo()

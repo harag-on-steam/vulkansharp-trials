@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
 VisualStudioVersion = 14.0.25123.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VulkanTutorial", "VulkanTutorial\VulkanTutorial.csproj", "{805C20E4-2EAB-436C-9E9B-2A50EF46AF08}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VulkanTutorial", "VulkanTutorial.csproj", "{805C20E4-2EAB-436C-9E9B-2A50EF46AF08}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
