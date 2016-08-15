@@ -48,19 +48,22 @@ namespace Vulkan.Tutorial
                 });
 
                 WindowThread.SetApartmentState(ApartmentState.STA);
+                WindowThread.IsBackground = true;
                 WindowThread.Start();
                 WindowInitalized.WaitOne();
             }
         }
 
-        public T InvokeAndWait<T>(Func<T, Form> inWindowThread)
+        public T InvokeAndWait<T>(Func<Form, T> inWindowThread)
         {
-            return (T)Window.Invoke(inWindowThread);
+            Func<T> f = () => inWindowThread(Window);
+            return (T)Window.Invoke(f);
         }
 
         public void InvokeAndWait(Action<Form> inWindowThread)
         {
-            Window.Invoke(inWindowThread);
+            Action a = () => inWindowThread(Window);
+            Window.Invoke(a);
         }
 
         public ICollection<string> RequiredVulkanExtensions { get; } = new HashSet<string>()

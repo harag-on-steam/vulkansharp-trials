@@ -15,10 +15,16 @@ namespace Vulkan.Tutorial
         static void Main(string[] args)
         {
             Windowing windowing = new Windowing(500, 500);
-            VRenderer2 r = new VRenderer2(windowing, true);
+            VulkanRenderer renderer = new VulkanRenderer(windowing, true);
 
-            Console.ReadLine();
-            r.Dispose();
+            Console.WriteLine("Renderer created, press [Enter] to draw or enter \"q\" to exit.");
+            while (Console.ReadLine() != "q")
+                renderer.DrawFrame();
+                // windowing.InvokeAndWait(f => renderer.DrawFrame());
+
+            windowing.Dispose();
+            renderer.Dispose();
+            Console.WriteLine("Renderer disposed, press [Enter] to exit.");
             Console.ReadLine();
         }
     }

@@ -27,13 +27,5 @@ namespace Vulkan.Tutorial
         {
             return new SortedSet<T>(enumerable, comparer);
         }
-
-        public static IEnumerable<T> CheckAvailability<T>(this IEnumerable<T> required, string name, IEnumerable<T> available)
-        {
-            var missing = required.Except(available).ToHashSet();
-            if (missing.Count > 0)
-                throw new InvalidOperationException($"The {name} [{string.Join(", ", missing)}] are required but not available.");
-            return required;
-        }
     }
 }
