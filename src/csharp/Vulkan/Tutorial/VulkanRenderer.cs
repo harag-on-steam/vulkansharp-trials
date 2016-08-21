@@ -7,6 +7,8 @@ using Vulkan;
 using Vulkan.Windows;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace Vulkan.Tutorial
 {
@@ -55,8 +57,49 @@ namespace Vulkan.Tutorial
         }
     };
 
+    struct Vertex
+    {
+        public Vector2 Pos;
+        public Vector3 Color;
+
+        public static readonly uint OffsetPos = 0;
+        public static readonly uint OffsetColor = 2 * sizeof(float);
+        public static readonly uint Size = 5 * sizeof(float);
+
+        public static readonly VertexInputBindingDescription BindingDescription = new VertexInputBindingDescription()
+        {
+            Binding = 0,
+            Stride = 5 * sizeof(float),
+            InputRate = VertexInputRate.Vertex,
+        };
+
+        public static void CopyToBuffer(Vertex[] vertices, IntPtr buffer)
+        {
+            var tempArray = new float[vertices.Length * 5];
+            for (int i=0; i<vertices.Length; ++i)
+            {
+                vertices[i].Pos.CopyTo(tempArray, i * 5);
+                vertices[i].Color.CopyTo(tempArray, i * 5 + 2);
+            }
+            Marshal.Copy(tempArray, 0, buffer, tempArray.Length);
+        }
+
+        public Vertex(Vector2 pos, Vector3 color)
+        {
+            Pos = pos;
+            Color = color;
+        }
+    }
+
     class VulkanRenderer : IDisposable
     {
+        public static readonly Vertex[] vertices = new[]
+        {
+            new Vertex(new Vector2( 0.0f, -0.5f), new Vector3(1.0f, 0.0f, 0.0f)),
+            new Vertex(new Vector2( 0.5f,  0.5f), new Vector3(0.0f, 1.0f, 0.0f)),
+            new Vertex(new Vector2(-0.5f,  0.5f), new Vector3(0.0f, 0.0f, 1.0f)),
+        };
+
         private const uint VK_SUBPASS_EXTERNAL = ~0U; // see vulkan.h
 
         private readonly string[] DEBUG_INSTANCE_EXTENSIONS = { "VK_EXT_debug_report" };
@@ -78,6 +121,20 @@ namespace Vulkan.Tutorial
         private Image[] vkSwapChainImages;
         private ImageView[] vkSwapChainImageViews;
         private Framebuffer[] vkSwapChainFramebuffers;
+        private ShaderModule vkVertShaderModule;
+        private ShaderModule vkFragShaderModule;
+        private PipelineLayout vkPipelineLayout;
+        private RenderPass vkRenderPass;
+        private Pipeline vkPipeline;
+        private CommandPool vkCommandPool;
+        private CommandBuffer[] vkCommandBuffers;
+        private Semaphore vkImageAvailableSemaphore;
+        private Semaphore vkRenderFinishedSemaphore;
+
+        private Buffer vkVertexBuffer;
+        private DeviceMemory vkVertexBufferMemory;
+        private Buffer vkStagingVertexBuffer;
+        private DeviceMemory vkStagingVertexBufferMemory;
 
         public VulkanRenderer(Windowing Windowing, bool Debug)
         {
@@ -94,6 +151,7 @@ namespace Vulkan.Tutorial
             CreateGraphicsPipeline();
             CreateFramebuffers();
             CreateCommandPool();
+            CreateVertexBuffer();
             CreateCommandBuffers();
             CreateSemaphores();
         }
@@ -374,7 +432,7 @@ namespace Vulkan.Tutorial
 
         private void CreateGraphicsPipeline()
         {
-            vkVertShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\shader.vert.spv"));
+            vkVertShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\passthrough.vert.spv"));
             vkFragShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\shader.frag.spv"));
 
             var shaderStages = new[] {
@@ -394,8 +452,25 @@ namespace Vulkan.Tutorial
 
             var vertexInputInfo = new PipelineVertexInputStateCreateInfo()
             {
-                VertexBindingDescriptionCount = 0,
-                VertexAttributeDescriptionCount = 0,
+                VertexBindingDescriptions = new[] {
+                    Vertex.BindingDescription,
+                },
+                VertexAttributeDescriptions = new[] {
+                    new VertexInputAttributeDescription()
+                    {
+                        Binding = 0,
+                        Location = 0,
+                        Format = Format.R32g32Sfloat,
+                        Offset = Vertex.OffsetPos,
+                    },
+                    new VertexInputAttributeDescription()
+                    {
+                        Binding = 0,
+                        Location = 1,
+                        Format = Format.R32g32b32Sfloat,
+                        Offset = Vertex.OffsetColor,
+                    },
+                },
             };
 
             var inputAssembly = new PipelineInputAssemblyStateCreateInfo()
@@ -511,6 +586,88 @@ namespace Vulkan.Tutorial
             });
         }
 
+        private void CreateVertexBuffer()
+        {
+            DeviceSize bufferSize = Vertex.Size * (uint)vertices.Length;
+
+            CreateBuffer(bufferSize,
+                BufferUsageFlags.VertexBuffer | BufferUsageFlags.TransferSrc,
+                MemoryPropertyFlags.HostVisible | MemoryPropertyFlags.HostCoherent,
+                out vkStagingVertexBuffer, out vkStagingVertexBufferMemory);
+
+            IntPtr bufferPtr = vkDevice.MapMemory(vkStagingVertexBufferMemory, 0, bufferSize);
+            Vertex.CopyToBuffer(vertices, bufferPtr);
+            vkDevice.UnmapMemory(vkStagingVertexBufferMemory);
+
+            CreateBuffer(bufferSize,
+                BufferUsageFlags.VertexBuffer | BufferUsageFlags.TransferDst,
+                MemoryPropertyFlags.DeviceLocal,
+                out vkVertexBuffer, out vkVertexBufferMemory);
+
+            CopyBuffer(vkStagingVertexBuffer, vkVertexBuffer, bufferSize);
+        }
+
+        private void CreateBuffer(DeviceSize size, BufferUsageFlags usage, MemoryPropertyFlags properties, out Buffer buffer, out DeviceMemory bufferMemory)
+        {
+            var bufferInfo = new BufferCreateInfo()
+            {
+                Size = size,
+                Usage = usage,
+                SharingMode = SharingMode.Exclusive,
+            };
+
+            buffer = vkDevice.CreateBuffer(bufferInfo);
+
+            var memRequirements = vkDevice.GetBufferMemoryRequirements(buffer);
+
+            var allocInfo = new MemoryAllocateInfo()
+            {
+                AllocationSize = memRequirements.Size,
+                MemoryTypeIndex = FindMemoryType(memRequirements.MemoryTypeBits, properties),
+            };
+
+            bufferMemory = vkDevice.AllocateMemory(allocInfo);
+
+            vkDevice.BindBufferMemory(buffer, bufferMemory, 0);
+        }
+
+        private uint FindMemoryType(uint typeFilter, MemoryPropertyFlags properties)
+        {
+            var memProperties = vkPhysicalDevice.GetMemoryProperties();
+
+            for (var i=0; i<memProperties.MemoryTypeCount; ++i)
+            {
+                if ((typeFilter & (1 << i)) != 0 
+                    && (memProperties.MemoryTypes[i].PropertyFlags & properties) != 0)
+                {
+                    return (uint)i;
+                }
+            }
+
+            throw new InvalidOperationException("Failed to find suitable memory type");
+        }
+
+        private void CopyBuffer(Buffer srcBuffer, Buffer dstBuffer, DeviceSize size)
+        {
+            var allocInfo = new CommandBufferAllocateInfo()
+            {
+                Level = CommandBufferLevel.Primary,
+                CommandPool = vkCommandPool,
+                CommandBufferCount = 1,
+            };
+
+            var commandBuffer = vkDevice.AllocateCommandBuffers(allocInfo)[0];
+
+            commandBuffer.Begin(new CommandBufferBeginInfo() { Flags = CommandBufferUsageFlags.OneTimeSubmit });
+            commandBuffer.CmdCopyBuffer(srcBuffer, dstBuffer, new[] { new BufferCopy { Size = size } });
+            commandBuffer.End();
+
+            vkGraphicsQueue.Submit(new[] { new SubmitInfo() { CommandBuffers = new[] { commandBuffer } } }, vkNullHandle<Fence>());
+            vkGraphicsQueue.WaitIdle();
+
+            vkDevice.FreeCommandBuffers(vkCommandPool, new[] { commandBuffer });
+        }
+
         private void CreateCommandBuffers()
         {
             var allocInfo = new CommandBufferAllocateInfo()
@@ -543,7 +700,8 @@ namespace Vulkan.Tutorial
 
                 buffer.CmdBindPipeline(PipelineBindPoint.Graphics, vkPipeline);
 
-                buffer.CmdDraw(3, 1, 0, 0);
+                buffer.CmdBindVertexBuffers(0, new[] { vkVertexBuffer }, new DeviceSize[] { 0 });
+                buffer.CmdDraw((uint)vertices.Length, 1, 0, 0);
 
                 buffer.CmdEndRenderPass();
 
@@ -642,15 +800,6 @@ namespace Vulkan.Tutorial
 
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
-        private ShaderModule vkVertShaderModule;
-        private ShaderModule vkFragShaderModule;
-        private PipelineLayout vkPipelineLayout;
-        private RenderPass vkRenderPass;
-        private Pipeline vkPipeline;
-        private CommandPool vkCommandPool;
-        private CommandBuffer[] vkCommandBuffers;
-        private Semaphore vkImageAvailableSemaphore;
-        private Semaphore vkRenderFinishedSemaphore;
 
         protected virtual void Dispose(bool disposing)
         {
@@ -661,6 +810,16 @@ namespace Vulkan.Tutorial
                     if (vkDevice != null)
                     {
                         vkDevice.WaitIdle();
+
+                        if (vkVertexBuffer != null)
+                            vkDevice.DestroyBuffer(vkVertexBuffer);
+                        if (vkVertexBufferMemory != null)
+                            vkDevice.FreeMemory(vkVertexBufferMemory);
+
+                        if (vkStagingVertexBuffer != null)
+                            vkDevice.DestroyBuffer(vkStagingVertexBuffer);
+                        if (vkStagingVertexBufferMemory != null)
+                            vkDevice.FreeMemory(vkStagingVertexBufferMemory);
 
                         if (vkCommandPool != null)
                             vkDevice.DestroyCommandPool(vkCommandPool);

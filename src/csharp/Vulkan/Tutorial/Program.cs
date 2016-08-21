@@ -7,6 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Drawing;
 using System.Windows.Forms;
+using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace Vulkan.Tutorial
 {
