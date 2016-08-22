@@ -91,13 +91,26 @@ namespace Vulkan.Tutorial
         }
     }
 
+    [StructLayout(LayoutKind.Sequential, Size = 192)]
+    struct UniformBufferObject
+    {
+        public Matrix4x4 model;
+        public Matrix4x4 view;
+        public Matrix4x4 proj;
+    }
+
     class VulkanRenderer : IDisposable
     {
-        public static readonly Vertex[] vertices = new[]
+        public static readonly Vertex[] vertices = 
         {
-            new Vertex(new Vector2( 0.0f, -0.5f), new Vector3(1.0f, 0.0f, 0.0f)),
-            new Vertex(new Vector2( 0.5f,  0.5f), new Vector3(0.0f, 1.0f, 0.0f)),
-            new Vertex(new Vector2(-0.5f,  0.5f), new Vector3(0.0f, 0.0f, 1.0f)),
+            new Vertex(new Vector2(-0.5f, -0.5f), new Vector3(1.0f, 0.0f, 0.0f)),
+            new Vertex(new Vector2( 0.5f, -0.5f), new Vector3(0.0f, 1.0f, 0.0f)),
+            new Vertex(new Vector2( 0.5f,  0.5f), new Vector3(0.0f, 0.0f, 1.0f)),
+            new Vertex(new Vector2(-0.5f,  0.5f), new Vector3(1.0f, 1.0f, 1.0f)),
+        };
+
+        public static readonly short[] indices = {
+            0, 1, 2, 2, 3, 0,
         };
 
         private const uint VK_SUBPASS_EXTERNAL = ~0U; // see vulkan.h
@@ -125,6 +138,7 @@ namespace Vulkan.Tutorial
         private ShaderModule vkFragShaderModule;
         private PipelineLayout vkPipelineLayout;
         private RenderPass vkRenderPass;
+        private DescriptorSetLayout vkDescriptorSetLayout;
         private Pipeline vkPipeline;
         private CommandPool vkCommandPool;
         private CommandBuffer[] vkCommandBuffers;
@@ -135,6 +149,16 @@ namespace Vulkan.Tutorial
         private DeviceMemory vkVertexBufferMemory;
         private Buffer vkStagingVertexBuffer;
         private DeviceMemory vkStagingVertexBufferMemory;
+
+        private Buffer vkIndexBuffer;
+        private DeviceMemory vkIndexBufferMemory;
+        private Buffer vkStagingIndexBuffer;
+        private DeviceMemory vkStagingIndexBufferMemory;
+
+        private Buffer vkUniformBuffer;
+        private DeviceMemory vkUniformBufferMemory;
+        private Buffer vkStagingUniformBuffer;
+        private DeviceMemory vkStagingUniformBufferMemory;
 
         public VulkanRenderer(Windowing Windowing, bool Debug)
         {
@@ -148,10 +172,15 @@ namespace Vulkan.Tutorial
             CreateSwapChain();
             CreateImageViews();
             CreateRenderPass();
+            CreateDescriptorSetLayout();
             CreateGraphicsPipeline();
             CreateFramebuffers();
             CreateCommandPool();
             CreateVertexBuffer();
+            CreateIndexBuffer();
+            CreateUniformBuffer();
+            CreateDescriptorPool();
+            CreateDescriptorSet();
             CreateCommandBuffers();
             CreateSemaphores();
         }
@@ -213,17 +242,19 @@ namespace Vulkan.Tutorial
 
             try
             {
+                var availableExtensions = device.EnumerateDeviceExtensionProperties()?.Select(e => e.ExtensionName) ?? Enumerable.Empty<string>();
+                Debug.WriteLine($"Available extensions: {list(availableExtensions)}");
                 var requiredExtensions = GetRequiredDeviceExtensions().ToHashSet();
-                var availableExtensions = device.EnumerateDeviceExtensionProperties().Select(e => e.ExtensionName);
                 var missingExtensions = requiredExtensions.Except(availableExtensions).ToSortedSet();
                 if (missingExtensions.Count > 0)
-                    Debug.WriteLine($"Missing extensions {list(missingExtensions)}");
+                    Debug.WriteLine($"Missing extensions: {list(missingExtensions)}");
 
-                var availableLayers = device.EnumerateDeviceLayerProperties().Select(e => e.LayerName);
+                var availableLayers = device.EnumerateDeviceLayerProperties()?.Select(e => e.LayerName) ?? Enumerable.Empty<string>();
+                Debug.WriteLine($"Available layers: {list(availableLayers)}");
                 var requiredLayers = GetRequiredDeviceLayers().ToHashSet();
                 var missingLayers = requiredLayers.Except(availableLayers).ToSortedSet();
                 if (missingLayers.Count > 0)
-                    Debug.WriteLine($"Missing layers {list(missingLayers)}");
+                    Debug.WriteLine($"Missing layers: {list(missingLayers)}");
 
                 if (missingExtensions.Count > 0 || missingLayers.Count > 0) 
                     return false; // no further checks, extension functions to do so might be missing
@@ -430,9 +461,29 @@ namespace Vulkan.Tutorial
             vkRenderPass = vkDevice.CreateRenderPass(renderPassInfo);
         }
 
+        private void CreateDescriptorSetLayout()
+        {
+            var layoutInfo = new DescriptorSetLayoutCreateInfo()
+            {
+                Bindings = new[]
+                {
+                    new DescriptorSetLayoutBinding()
+                    {
+                        Binding = 0,
+                        DescriptorType = DescriptorType.UniformBuffer,
+                        StageFlags = ShaderStageFlags.Vertex,
+                        DescriptorCount = 1,
+                        // ImmutableSamplers = null,
+                    }
+                },
+            };
+
+            vkDescriptorSetLayout = vkDevice.CreateDescriptorSetLayout(layoutInfo);
+        }
+
         private void CreateGraphicsPipeline()
         {
-            vkVertShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\passthrough.vert.spv"));
+            vkVertShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\project.vert.spv"));
             vkFragShaderModule = vkDevice.CreateShaderModule(ReadFile("Shaders\\shader.frag.spv"));
 
             var shaderStages = new[] {
@@ -506,7 +557,7 @@ namespace Vulkan.Tutorial
                 RasterizerDiscardEnable = false,
                 PolygonMode = PolygonMode.Fill,
                 LineWidth = 1.0f,
-                CullMode = CullModeFlags.Back,
+                CullMode = CullModeFlags.None,
                 FrontFace = FrontFace.Clockwise,
                 DepthBiasEnable = false,
             };
@@ -533,6 +584,7 @@ namespace Vulkan.Tutorial
 
             var pipelineLayoutInfo = new PipelineLayoutCreateInfo()
             {
+                SetLayouts = new[] { vkDescriptorSetLayout },
             };
             vkPipelineLayout = vkDevice.CreatePipelineLayout(pipelineLayoutInfo);
 
@@ -591,7 +643,7 @@ namespace Vulkan.Tutorial
             DeviceSize bufferSize = Vertex.Size * (uint)vertices.Length;
 
             CreateBuffer(bufferSize,
-                BufferUsageFlags.VertexBuffer | BufferUsageFlags.TransferSrc,
+                BufferUsageFlags.TransferSrc,
                 MemoryPropertyFlags.HostVisible | MemoryPropertyFlags.HostCoherent,
                 out vkStagingVertexBuffer, out vkStagingVertexBufferMemory);
 
@@ -605,6 +657,48 @@ namespace Vulkan.Tutorial
                 out vkVertexBuffer, out vkVertexBufferMemory);
 
             CopyBuffer(vkStagingVertexBuffer, vkVertexBuffer, bufferSize);
+        }
+
+        private void CreateIndexBuffer()
+        {
+            DeviceSize bufferSize = sizeof(short) * (uint)indices.Length;
+
+            CreateBuffer(bufferSize,
+                BufferUsageFlags.TransferSrc,
+                MemoryPropertyFlags.HostVisible | MemoryPropertyFlags.HostCoherent,
+                out vkStagingIndexBuffer, out vkStagingIndexBufferMemory);
+
+            IntPtr bufferPtr = vkDevice.MapMemory(vkStagingIndexBufferMemory, 0, bufferSize);
+            Marshal.Copy(indices, 0, bufferPtr, indices.Length);
+            vkDevice.UnmapMemory(vkStagingIndexBufferMemory);
+
+            CreateBuffer(bufferSize,
+                BufferUsageFlags.VertexBuffer | BufferUsageFlags.TransferDst,
+                MemoryPropertyFlags.DeviceLocal,
+                out vkIndexBuffer, out vkIndexBufferMemory);
+
+            CopyBuffer(vkStagingIndexBuffer, vkIndexBuffer, bufferSize);
+        }
+
+        private void CreateUniformBuffer()
+        {
+            DeviceSize bufferSize = Marshal.SizeOf<UniformBufferObject>();
+
+            CreateBuffer(bufferSize,
+                BufferUsageFlags.TransferSrc,
+                MemoryPropertyFlags.HostVisible | MemoryPropertyFlags.HostCoherent,
+                out vkStagingUniformBuffer, out vkStagingUniformBufferMemory);
+
+            IntPtr bufferPtr = vkDevice.MapMemory(vkStagingUniformBufferMemory, 0, bufferSize);
+            Marshal.Copy(indices, 0, bufferPtr, indices.Length);
+            vkDevice.UnmapMemory(vkStagingUniformBufferMemory);
+
+            CreateBuffer(bufferSize,
+                BufferUsageFlags.UniformBuffer | BufferUsageFlags.TransferDst,
+                MemoryPropertyFlags.DeviceLocal,
+                out vkUniformBuffer, out vkUniformBufferMemory);
+
+            CopyBuffer(vkStagingUniformBuffer, vkUniformBuffer, bufferSize);
         }
 
         private void CreateBuffer(DeviceSize size, BufferUsageFlags usage, MemoryPropertyFlags properties, out Buffer buffer, out DeviceMemory bufferMemory)
@@ -668,6 +762,55 @@ namespace Vulkan.Tutorial
             vkDevice.FreeCommandBuffers(vkCommandPool, new[] { commandBuffer });
         }
 
+        private void CreateDescriptorPool()
+        {
+            var poolInfo = new DescriptorPoolCreateInfo()
+            {
+                PoolSizes = new[]
+                {
+                    new DescriptorPoolSize()
+                    {
+                        Type = DescriptorType.UniformBuffer,
+                        DescriptorCount = 1,                        
+                    },
+                },
+                MaxSets = 1,
+            };
+
+            vkDescriptorPool = vkDevice.CreateDescriptorPool(poolInfo);
+        }
+
+        private void CreateDescriptorSet()
+        {
+            var allocInfo = new DescriptorSetAllocateInfo()
+            {
+                DescriptorPool = vkDescriptorPool,
+                SetLayouts = new[] { vkDescriptorSetLayout },
+            };
+
+            vkDescriptorSet = vkDevice.AllocateDescriptorSets(allocInfo)[0];
+
+            var bufferInfo = new DescriptorBufferInfo()
+            {
+                Buffer = vkUniformBuffer,
+                Offset = 0,
+                Range = Marshal.SizeOf<UniformBufferObject>(),
+            };
+
+            var descriptorWrite = new WriteDescriptorSet()
+            {
+                DstSet = vkDescriptorSet,
+                DstBinding = 0,
+                DstArrayElement = 0,
+                DescriptorType = DescriptorType.UniformBuffer,
+                BufferInfo = new[] { bufferInfo },
+                // ImageInfo = null,
+                // TexelBufferView = null,
+            };
+
+            vkDevice.UpdateDescriptorSets(new[] { descriptorWrite }, null);
+        }
+
         private void CreateCommandBuffers()
         {
             var allocInfo = new CommandBufferAllocateInfo()
@@ -700,8 +843,10 @@ namespace Vulkan.Tutorial
 
                 buffer.CmdBindPipeline(PipelineBindPoint.Graphics, vkPipeline);
 
+                buffer.CmdBindDescriptorSets(PipelineBindPoint.Graphics, vkPipelineLayout, 0, new[] { vkDescriptorSet }, new uint[] {});
                 buffer.CmdBindVertexBuffers(0, new[] { vkVertexBuffer }, new DeviceSize[] { 0 });
-                buffer.CmdDraw((uint)vertices.Length, 1, 0, 0);
+                buffer.CmdBindIndexBuffer(vkIndexBuffer, 0, IndexType.Uint16);
+                buffer.CmdDrawIndexed((uint)indices.Length, 1, 0, 0, 0);
 
                 buffer.CmdEndRenderPass();
 
@@ -719,8 +864,34 @@ namespace Vulkan.Tutorial
             vkRenderFinishedSemaphore = vkDevice.CreateSemaphore(semaphoreInfo);
         }
 
+
+        private void UpdateUniformBuffer()
+        {
+            DeviceSize bufferSize = Marshal.SizeOf<UniformBufferObject>();
+
+            var oneFullRotPer4SecInRad = (DateTime.Now.Ticks % (4 * TimeSpan.TicksPerSecond)) 
+                * ((Math.PI / 2f) / TimeSpan.TicksPerSecond);
+
+            var ubo = new UniformBufferObject()
+            {
+                model = Matrix4x4.CreateRotationZ((float)oneFullRotPer4SecInRad),
+                view = Matrix4x4.Identity, 
+                // view = Matrix4x4.CreateLookAt(new Vector3(2, 2, -2), new Vector3(0, 0, 0), new Vector3(0, 0, 1)),
+                proj = Matrix4x4.Identity, 
+                // proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 4), windowing.Width / (float)windowing.Height, 0.1f, 10.0f),
+            };
+
+            IntPtr buffer = vkDevice.MapMemory(vkStagingUniformBufferMemory, 0, Marshal.SizeOf<UniformBufferObject>());
+            Marshal.StructureToPtr(ubo, buffer, false);
+            vkDevice.UnmapMemory(vkStagingUniformBufferMemory);
+
+            CopyBuffer(vkStagingUniformBuffer, vkUniformBuffer, bufferSize);
+        }
+
         public void DrawFrame()
         {
+            UpdateUniformBuffer();
+
             var imageIndex = vkDevice.AcquireNextImageKHR(vkSwapChain, ulong.MaxValue, vkImageAvailableSemaphore, vkNullHandle<Fence>());
 
             var submitInfo = new SubmitInfo()
@@ -800,6 +971,8 @@ namespace Vulkan.Tutorial
 
         #region IDisposable Support
         private bool disposedValue = false; // To detect redundant calls
+        private DescriptorPool vkDescriptorPool;
+        private DescriptorSet vkDescriptorSet;
 
         protected virtual void Dispose(bool disposing)
         {
@@ -811,16 +984,35 @@ namespace Vulkan.Tutorial
                     {
                         vkDevice.WaitIdle();
 
+                        if (vkUniformBuffer != null)
+                            vkDevice.DestroyBuffer(vkUniformBuffer);
+                        if (vkUniformBufferMemory != null)
+                            vkDevice.FreeMemory(vkUniformBufferMemory);
+                        if (vkStagingUniformBuffer != null)
+                            vkDevice.DestroyBuffer(vkStagingUniformBuffer);
+                        if (vkStagingUniformBufferMemory != null)
+                            vkDevice.FreeMemory(vkStagingUniformBufferMemory);
+
+                        if (vkIndexBuffer != null)
+                            vkDevice.DestroyBuffer(vkIndexBuffer);
+                        if (vkIndexBufferMemory != null)
+                            vkDevice.FreeMemory(vkIndexBufferMemory);
+                        if (vkStagingIndexBuffer != null)
+                            vkDevice.DestroyBuffer(vkStagingIndexBuffer);
+                        if (vkStagingIndexBufferMemory != null)
+                            vkDevice.FreeMemory(vkStagingIndexBufferMemory);
+
                         if (vkVertexBuffer != null)
                             vkDevice.DestroyBuffer(vkVertexBuffer);
                         if (vkVertexBufferMemory != null)
                             vkDevice.FreeMemory(vkVertexBufferMemory);
-
                         if (vkStagingVertexBuffer != null)
                             vkDevice.DestroyBuffer(vkStagingVertexBuffer);
                         if (vkStagingVertexBufferMemory != null)
                             vkDevice.FreeMemory(vkStagingVertexBufferMemory);
 
+                        if (vkDescriptorPool != null)
+                            vkDevice.DestroyDescriptorPool(vkDescriptorPool);
                         if (vkCommandPool != null)
                             vkDevice.DestroyCommandPool(vkCommandPool);
 
@@ -832,6 +1024,8 @@ namespace Vulkan.Tutorial
                             vkDevice.DestroyPipeline(vkPipeline);
                         if (vkPipelineLayout != null)
                             vkDevice.DestroyPipelineLayout(vkPipelineLayout);
+                        if (vkDescriptorSetLayout != null)
+                            vkDevice.DestroyDescriptorSetLayout(vkDescriptorSetLayout);
                         if (vkRenderPass != null)
                             vkDevice.DestroyRenderPass(vkRenderPass);
                         if (vkFragShaderModule != null)

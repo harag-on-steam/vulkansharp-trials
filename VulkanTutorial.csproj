@@ -68,7 +68,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <CompileShader Include="src\glsl\passthrough.vert" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>

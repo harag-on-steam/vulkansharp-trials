@@ -16,8 +16,12 @@ namespace Vulkan.Tutorial
     {
         static void Main(string[] args)
         {
+            // Environment.SetEnvironmentVariable("VK_LAYER_PATH", "C:\\dev\\vulkan\\1.0.21.1\\Bin", EnvironmentVariableTarget.Process);
+            Environment.SetEnvironmentVariable("VK_INSTANCE_LAYERS", "VK_LAYER_LUNARG_standard_validation", EnvironmentVariableTarget.Process);
+            Environment.SetEnvironmentVariable("VK_DEVICE_LAYERS", "VK_LAYER_LUNARG_standard_validation", EnvironmentVariableTarget.Process);
+
             Windowing windowing = new Windowing(500, 500);
-            VulkanRenderer renderer = new VulkanRenderer(windowing, true);
+            VulkanRenderer renderer = new VulkanRenderer(windowing, false);
 
             Console.WriteLine("Renderer created, press [Enter] to draw or enter \"q\" to exit.");
             while (Console.ReadLine() != "q")
