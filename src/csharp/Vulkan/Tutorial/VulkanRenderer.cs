@@ -557,8 +557,8 @@ namespace Vulkan.Tutorial
                 RasterizerDiscardEnable = false,
                 PolygonMode = PolygonMode.Fill,
                 LineWidth = 1.0f,
-                CullMode = CullModeFlags.None,
-                FrontFace = FrontFace.Clockwise,
+                CullMode = CullModeFlags.Back,
+                FrontFace = FrontFace.CounterClockwise,
                 DepthBiasEnable = false,
             };
 
@@ -875,10 +875,8 @@ namespace Vulkan.Tutorial
             var ubo = new UniformBufferObject()
             {
                 model = Matrix4x4.CreateRotationZ((float)oneFullRotPer4SecInRad),
-                view = Matrix4x4.Identity, 
-                // view = Matrix4x4.CreateLookAt(new Vector3(2, 2, -2), new Vector3(0, 0, 0), new Vector3(0, 0, 1)),
-                proj = Matrix4x4.Identity, 
-                // proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 4), windowing.Width / (float)windowing.Height, 0.1f, 10.0f),
+                view = Matrix4x4.CreateLookAt(new Vector3(2, 2, -2), new Vector3(0, 0, 0), new Vector3(0, 0, 1)),
+                proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 4), windowing.Width / (float)windowing.Height, 0.1f, 10.0f),
             };
 
             IntPtr buffer = vkDevice.MapMemory(vkStagingUniformBufferMemory, 0, Marshal.SizeOf<UniformBufferObject>());
