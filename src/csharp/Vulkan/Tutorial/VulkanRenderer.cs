@@ -536,8 +536,8 @@ namespace Vulkan.Tutorial
                 Y = 0f,
                 Width = (float) vkSwapChainExtent.Width,
                 Height = (float) vkSwapChainExtent.Height,
-                MinDepth = 0f,
-                MaxDepth = 0f,
+                MinDepth = 0.0f,
+                MaxDepth = 1.0f,
             };
 
             var scissor = new Rect2D()
@@ -864,19 +864,27 @@ namespace Vulkan.Tutorial
             vkRenderFinishedSemaphore = vkDevice.CreateSemaphore(semaphoreInfo);
         }
 
+        // Account for differences in automatic conversion from clip space to normalized device coordinates between OpenGL and Vulkan
+        // https://github.com/LunarG/VulkanSamples/commit/0dd36179880238014512c0637b0ba9f41febe803
+        private static readonly Matrix4x4 VK_SPACE_CORRECTION = new Matrix4x4(
+            1.0f,  0.0f, 0.0f, 0.0f,
+            0.0f, -1.0f, 0.0f, 0.0f,
+            0.0f,  0.0f, 0.5f, 0.0f,
+            0.0f,  0.0f, 0.5f, 1.0f);
 
         private void UpdateUniformBuffer()
         {
             DeviceSize bufferSize = Marshal.SizeOf<UniformBufferObject>();
 
+            // cycles values after 4 seconds
             var oneFullRotPer4SecInRad = (DateTime.Now.Ticks % (4 * TimeSpan.TicksPerSecond)) 
                 * ((Math.PI / 2f) / TimeSpan.TicksPerSecond);
 
             var ubo = new UniformBufferObject()
             {
                 model = Matrix4x4.CreateRotationZ((float)oneFullRotPer4SecInRad),
-                view = Matrix4x4.CreateLookAt(new Vector3(2, 2, -2), new Vector3(0, 0, 0), new Vector3(0, 0, 1)),
-                proj = Matrix4x4.CreatePerspectiveFieldOfView((float)(Math.PI / 4), windowing.Width / (float)windowing.Height, 0.1f, 10.0f),
+                view = Matrix4x4.CreateLookAt(new Vector3(2, 2, 2), new Vector3(0, 0, 0), Vector3.UnitZ),
+                proj = VK_SPACE_CORRECTION * Matrix4x4.CreatePerspectiveFieldOfView((float)(70 * Math.PI / 180), windowing.Width / (float)windowing.Height, 0.1f, 100.0f),
             };
 
             IntPtr buffer = vkDevice.MapMemory(vkStagingUniformBufferMemory, 0, Marshal.SizeOf<UniformBufferObject>());

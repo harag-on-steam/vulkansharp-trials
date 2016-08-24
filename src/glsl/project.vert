@@ -18,6 +18,5 @@ out gl_PerVertex {
 
 void main() {
     gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 0.0, 1.0);
-	gl_Position = gl_Position / gl_Position.w;
     fragColor = inColor;
 }
